@@ -58,3 +58,68 @@ export interface ApiError {
   error: string;
   details?: string;
 }
+
+export interface PromptRevision {
+  id: string;
+  modifiedTime: string;
+  version?: number;
+}
+
+export interface GetHistoryResponse {
+  revisions: PromptRevision[];
+}
+
+export interface GetVersionResponse {
+  content: Prompt;
+  revisionId: string;
+}
+
+export interface SaveAsTemplateRequest {
+  extractVariables?: boolean;
+}
+
+export interface SaveAsTemplateResponse {
+  prompt: Prompt;
+  variables: string[];
+}
+
+export interface CreateFromTemplateRequest {
+  templateId: string;
+  variables: Record<string, string>;
+  title?: string;
+  folderPath?: string;
+  tags?: string[];
+}
+
+export interface CreateFromTemplateResponse {
+  prompt: Prompt;
+}
+
+export interface TrackViewResponse {
+  success: boolean;
+  viewCount: number;
+  lastUsedAt: string;
+}
+
+export interface ExportRequest {
+  promptIds: string[];
+  format: 'json' | 'markdown';
+}
+
+export interface ExportResponse {
+  content: string;
+  filename: string;
+  mimeType: string;
+}
+
+export interface ImportRequest {
+  content: string;
+  format: 'json' | 'markdown';
+}
+
+export interface ImportResponse {
+  prompts: Prompt[];
+  imported: number;
+  failed: number;
+  errors?: string[];
+}

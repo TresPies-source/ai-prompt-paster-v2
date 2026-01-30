@@ -250,4 +250,30 @@ export class DriveClient {
       await this.updateFile(fileId, content);
     });
   }
+
+  async getRevisions(fileId: string): Promise<Array<{ id: string; modifiedTime: string }>> {
+    return this.retry(async () => {
+      const response = await this.drive.revisions.list({
+        fileId,
+        fields: 'revisions(id, modifiedTime)',
+      });
+
+      return (response.data.revisions || []).map(rev => ({
+        id: rev.id!,
+        modifiedTime: rev.modifiedTime!,
+      }));
+    });
+  }
+
+  async getRevisionContent(fileId: string, revisionId: string): Promise<string> {
+    return this.retry(async () => {
+      const response = await this.drive.revisions.get({
+        fileId,
+        revisionId,
+        alt: 'media',
+      });
+
+      return JSON.stringify(response.data);
+    });
+  }
 }

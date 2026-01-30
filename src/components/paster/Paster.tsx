@@ -7,6 +7,7 @@ import ContentInput from './ContentInput';
 import AISuggestions from './AISuggestions';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
+import TemplateLibraryModal from '@/components/library/TemplateLibraryModal';
 import { aiService, AIAnalysisResult } from '@/services/ai/aiService';
 import { validatePrompt } from '@/types/prompt';
 
@@ -20,7 +21,9 @@ export default function Paster() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
 
   const handleAnalyze = useCallback(async () => {
     if (!content.trim()) {
@@ -41,6 +44,7 @@ export default function Paster() {
       setTags(result.tags);
       setFolderPath(result.folderPath);
       setShowSuggestions(true);
+      setPreviewMode(true);
     } catch (err) {
       console.error('Analysis failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to analyze content');
@@ -100,6 +104,7 @@ export default function Paster() {
       setTags([]);
       setFolderPath('/');
       setShowSuggestions(false);
+      setPreviewMode(false);
 
       setTimeout(() => {
         setSuccessMessage(null);
@@ -118,20 +123,46 @@ export default function Paster() {
     setTags([]);
     setFolderPath('/');
     setShowSuggestions(false);
+    setPreviewMode(false);
     setError(null);
     setSuccessMessage(null);
+  };
+
+  const handleRegenerate = () => {
+    handleAnalyze();
+  };
+
+  const handleTemplateSelect = (templateContent: string) => {
+    setContent(templateContent);
+    setShowTemplateLibrary(false);
   };
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Paste New Prompt</h1>
-        <button
-          onClick={() => router.push('/library')}
-          className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-        >
-          Go to Library →
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowTemplateLibrary(true)}
+            className="px-4 py-2 text-sm font-medium text-purple-600 hover:text-purple-700 hover:underline flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            Start from Template
+          </button>
+          <button
+            onClick={() => router.push('/library')}
+            className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+          >
+            Go to Library →
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -206,6 +237,8 @@ export default function Paster() {
               onTagsChange={setTags}
               onFolderPathChange={setFolderPath}
               isLoading={isAnalyzing}
+              onRegenerate={handleRegenerate}
+              previewMode={previewMode}
             />
           )}
         </div>
@@ -228,6 +261,13 @@ export default function Paster() {
             )}
           </button>
         </div>
+      )}
+
+      {showTemplateLibrary && (
+        <TemplateLibraryModal
+          onClose={() => setShowTemplateLibrary(false)}
+          onSelectTemplate={handleTemplateSelect}
+        />
       )}
     </div>
   );

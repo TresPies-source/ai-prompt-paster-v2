@@ -7,6 +7,11 @@ export interface Prompt {
   createdAt: string;
   modifiedAt: string;
   sourceUrl?: string;
+  isTemplate?: boolean;
+  variables?: string[];
+  viewCount?: number;
+  lastUsedAt?: string;
+  version?: number;
 }
 
 export interface PromptValidationRules {

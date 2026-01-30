@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import EditorPanel from './EditorPanel';
 import SuggestionsPanel from './SuggestionsPanel';
+import TemplateLibraryModal from '@/components/library/TemplateLibraryModal';
 import { Prompt } from '@/types/prompt';
 import { validatePrompt } from '@/types/prompt';
 import ErrorMessage from '@/components/common/ErrorMessage';
@@ -33,6 +34,7 @@ export default function Composer({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allPrompts, setAllPrompts] = useState<Prompt[]>([]);
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -137,6 +139,11 @@ export default function Composer({
     onClose();
   };
 
+  const handleTemplateSelect = (templateContent: string) => {
+    setContent(templateContent);
+    setShowTemplateLibrary(false);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -159,7 +166,23 @@ export default function Composer({
           aria-modal="true"
         >
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 id="composer-title" className="text-2xl font-bold text-gray-900">Prompt Composer</h2>
+            <div className="flex items-center gap-4">
+              <h2 id="composer-title" className="text-2xl font-bold text-gray-900">Prompt Composer</h2>
+              <button
+                onClick={() => setShowTemplateLibrary(true)}
+                className="px-3 py-1.5 text-sm font-medium text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                Start from Template
+              </button>
+            </div>
             <button
               onClick={handleClose}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -221,6 +244,13 @@ export default function Composer({
             </button>
           </div>
         </motion.div>
+
+        {showTemplateLibrary && (
+          <TemplateLibraryModal
+            onClose={() => setShowTemplateLibrary(false)}
+            onSelectTemplate={handleTemplateSelect}
+          />
+        )}
       </motion.div>
     </AnimatePresence>
   );

@@ -1,16 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Prompt } from '@/types/prompt';
+import VersionHistoryModal from './VersionHistoryModal';
 
 interface PromptDetailModalProps {
   prompt: Prompt | null;
   onClose: () => void;
+  onUpdate?: (prompt: Prompt) => void;
 }
 
-export default function PromptDetailModal({ prompt, onClose }: PromptDetailModalProps) {
+export default function PromptDetailModal({ prompt, onClose, onUpdate }: PromptDetailModalProps) {
   const [copied, setCopied] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [templateSuccess, setTemplateSuccess] = useState(false);
+
+  const trackView = useCallback(async () => {
+    if (!prompt) return;
+
+    try {
+      await fetch(`/api/drive/prompts/${prompt.id}/track-view`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      console.error('Failed to track view:', err);
+    }
+  }, [prompt]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -22,13 +39,14 @@ export default function PromptDetailModal({ prompt, onClose }: PromptDetailModal
     if (prompt) {
       document.addEventListener('keydown', handleEscape);
       document.body.style.overflow = 'hidden';
+      trackView();
     }
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
     };
-  }, [prompt, onClose]);
+  }, [prompt, onClose, trackView]);
 
   const handleCopy = async () => {
     if (prompt) {
@@ -42,7 +60,73 @@ export default function PromptDetailModal({ prompt, onClose }: PromptDetailModal
     }
   };
 
+  const handleRestore = async (content: string) => {
+    if (!prompt || !onUpdate) return;
+
+    try {
+      const response = await fetch(`/api/drive/prompts/${prompt.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to restore version');
+      }
+
+      const data = await response.json();
+      onUpdate(data.prompt);
+      setShowHistory(false);
+    } catch (err) {
+      console.error('Failed to restore version:', err);
+    }
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!prompt) return;
+
+    try {
+      setIsSavingTemplate(true);
+      const response = await fetch(`/api/drive/prompts/${prompt.id}/save-as-template`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save as template');
+      }
+
+      const data = await response.json();
+      if (onUpdate) {
+        onUpdate(data.prompt);
+      }
+      setTemplateSuccess(true);
+      setTimeout(() => setTemplateSuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to save as template:', err);
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
   if (!prompt) return null;
+
+  if (showHistory) {
+    return (
+      <VersionHistoryModal
+        promptId={prompt.id}
+        currentContent={prompt.content}
+        onClose={() => setShowHistory(false)}
+        onRestore={handleRestore}
+      />
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -120,6 +204,26 @@ export default function PromptDetailModal({ prompt, onClose }: PromptDetailModal
                   {new Date(prompt.createdAt).toLocaleString()}
                 </p>
               </div>
+              {prompt.viewCount !== undefined && (
+                <div>
+                  <span className="font-medium text-gray-700">Views:</span>
+                  <p className="mt-1 text-gray-600 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    {prompt.viewCount}
+                  </p>
+                </div>
+              )}
+              {prompt.lastUsedAt && (
+                <div>
+                  <span className="font-medium text-gray-700">Last Viewed:</span>
+                  <p className="mt-1 text-gray-600">
+                    {new Date(prompt.lastUsedAt).toLocaleString()}
+                  </p>
+                </div>
+              )}
               {prompt.sourceUrl && (
                 <div>
                   <span className="font-medium text-gray-700">Source:</span>
@@ -136,7 +240,61 @@ export default function PromptDetailModal({ prompt, onClose }: PromptDetailModal
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowHistory(true)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                History
+              </button>
+              {!prompt.isTemplate && (
+                <button
+                  onClick={handleSaveAsTemplate}
+                  disabled={isSavingTemplate}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {templateSuccess ? (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                      Saved as Template!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                      {isSavingTemplate ? 'Saving...' : 'Save as Template'}
+                    </>
+                  )}
+                </button>
+              )}
+              {prompt.isTemplate && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm rounded-full font-medium">
+                  Template
+                </span>
+              )}
+            </div>
             <button
               onClick={handleCopy}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"

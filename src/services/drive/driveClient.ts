@@ -3,10 +3,16 @@ import type { drive_v3 } from 'googleapis';
 
 const APP_FOLDER_NAME = 'AI Prompt Paster';
 const PROMPTS_FOLDER_NAME = 'prompts';
+const COLLECTIONS_FOLDER_NAME = 'collections';
+const SHARES_FOLDER_NAME = 'shares';
 const METADATA_FILE_NAME = 'metadata.json';
 
 export interface DriveClientConfig {
-  accessToken: string;
+  accessToken?: string;
+  serviceAccount?: {
+    email: string;
+    privateKey: string;
+  };
 }
 
 export interface RetryConfig {
@@ -23,10 +29,27 @@ export class DriveClient {
   private drive: drive_v3.Drive;
   private appFolderId: string | null = null;
   private promptsFolderId: string | null = null;
+  private collectionsFolderId: string | null = null;
+  private sharesFolderId: string | null = null;
 
   constructor(config: DriveClientConfig) {
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: config.accessToken });
+    let auth;
+
+    if (config.serviceAccount) {
+      auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: config.serviceAccount.email,
+          private_key: config.serviceAccount.privateKey,
+        },
+        scopes: ['https://www.googleapis.com/auth/drive.file'],
+      });
+    } else if (config.accessToken) {
+      const oauth = new google.auth.OAuth2();
+      oauth.setCredentials({ access_token: config.accessToken });
+      auth = oauth;
+    } else {
+      throw new Error('Either accessToken or serviceAccount must be provided');
+    }
 
     this.drive = google.drive({ version: 'v3', auth });
   }
@@ -64,6 +87,12 @@ export class DriveClient {
 
       const promptsFolderId = await this.getOrCreateFolder(PROMPTS_FOLDER_NAME, appFolderId);
       this.promptsFolderId = promptsFolderId;
+
+      const collectionsFolderId = await this.getOrCreateFolder(COLLECTIONS_FOLDER_NAME, appFolderId);
+      this.collectionsFolderId = collectionsFolderId;
+
+      const sharesFolderId = await this.getOrCreateFolder(SHARES_FOLDER_NAME, appFolderId);
+      this.sharesFolderId = sharesFolderId;
 
       await this.ensureMetadataFile();
     });
@@ -274,6 +303,90 @@ export class DriveClient {
       });
 
       return JSON.stringify(response.data);
+    });
+  }
+
+  async createCollectionFile(fileName: string, content: string): Promise<string> {
+    if (!this.collectionsFolderId) {
+      await this.ensureAppFolderStructure();
+    }
+
+    return this.retry(async () => {
+      const file = await this.drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [this.collectionsFolderId!],
+          mimeType: 'application/json',
+        },
+        media: {
+          mimeType: 'application/json',
+          body: content,
+        },
+        fields: 'id, name, createdTime, modifiedTime',
+      });
+
+      return file.data.id!;
+    });
+  }
+
+  async listCollectionFiles(): Promise<Array<{ id: string; name: string }>> {
+    if (!this.collectionsFolderId) {
+      await this.ensureAppFolderStructure();
+    }
+
+    return this.retry(async () => {
+      const response = await this.drive.files.list({
+        q: `'${this.collectionsFolderId}' in parents and trashed=false and mimeType='application/json'`,
+        fields: 'files(id, name, createdTime, modifiedTime)',
+        orderBy: 'modifiedTime desc',
+      });
+
+      return (response.data.files || []).map(file => ({
+        id: file.id!,
+        name: file.name!,
+      }));
+    });
+  }
+
+  async createShareFile(fileName: string, content: string): Promise<string> {
+    if (!this.sharesFolderId) {
+      await this.ensureAppFolderStructure();
+    }
+
+    return this.retry(async () => {
+      const file = await this.drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [this.sharesFolderId!],
+          mimeType: 'application/json',
+        },
+        media: {
+          mimeType: 'application/json',
+          body: content,
+        },
+        fields: 'id, name, createdTime, modifiedTime',
+      });
+
+      return file.data.id!;
+    });
+  }
+
+  async listShareFiles(): Promise<Array<{ id: string; name: string }>> {
+    if (!this.sharesFolderId) {
+      await this.ensureAppFolderStructure();
+    }
+
+    return this.retry(async () => {
+      const response = await this.drive.files.list({
+        q: `'${this.sharesFolderId}' in parents and trashed=false and mimeType='application/json'`,
+        fields: 'files(id, name, createdTime, modifiedTime)',
+        orderBy: 'modifiedTime desc',
+      });
+
+      return (response.data.files || []).map(file => ({
+        id: file.id!,
+        name: file.name!,
+      }));
     });
   }
 }

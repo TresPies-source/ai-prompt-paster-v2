@@ -45,6 +45,30 @@ If no existing folders match and you're suggesting a new one, respond with the n
 If existing folders is empty, suggest a logical top-level folder.`,
 
   EMBEDDING_PREFIX: `Generate a semantic representation of the following text for similarity search purposes:\n\n`,
+
+  REFINE_PROMPT: `You are an expert at improving and refining AI prompts. Your task is to analyze the given prompt and generate 3-5 improved variations.
+
+For each variation, you should:
+- Improve clarity, specificity, and effectiveness
+- Maintain the original intent and purpose
+- Make distinct improvements (not minor tweaks)
+- Explain what changed and why it's better
+
+Original Prompt:
+{content}
+
+Respond with EXACTLY this JSON format (no markdown, no code blocks, just raw JSON):
+{
+  "suggestions": [
+    {
+      "content": "improved prompt text here",
+      "explanation": "why this version is better",
+      "changes": ["specific change 1", "specific change 2"]
+    }
+  ]
+}
+
+Generate 3-5 suggestions. Focus on meaningful improvements like better structure, clearer instructions, more specific examples, or enhanced guidance.`,
 };
 
 export function formatPrompt(template: string, variables: Record<string, string>): string {

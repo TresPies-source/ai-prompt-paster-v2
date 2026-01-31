@@ -45,6 +45,26 @@ export default function Navigation() {
               >
                 Library
               </button>
+              <button
+                onClick={() => router.push('/compare')}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  pathname === '/compare'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Compare
+              </button>
+              <button
+                onClick={() => router.push('/collections')}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  pathname === '/collections'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Collections
+              </button>
             </div>
           </div>
 
@@ -59,23 +79,43 @@ export default function Navigation() {
         <div className="md:hidden flex gap-2 mt-3">
           <button
             onClick={() => router.push('/paster')}
-            className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               pathname === '/paster'
                 ? 'bg-blue-100 text-blue-700'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }`}
           >
-            New Prompt
+            New
           </button>
           <button
             onClick={() => router.push('/library')}
-            className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               pathname === '/library'
                 ? 'bg-blue-100 text-blue-700'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }`}
           >
             Library
+          </button>
+          <button
+            onClick={() => router.push('/compare')}
+            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              pathname === '/compare'
+                ? 'bg-blue-100 text-blue-700'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => router.push('/collections')}
+            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              pathname === '/collections'
+                ? 'bg-blue-100 text-blue-700'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            Collections
           </button>
         </div>
       </div>

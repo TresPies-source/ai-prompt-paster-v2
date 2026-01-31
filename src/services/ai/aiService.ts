@@ -1,6 +1,7 @@
 import { SYSTEM_PROMPTS, formatPrompt } from '@/config/prompts';
 import { AI_CONFIG, ERROR_MESSAGES } from '@/config/constants';
 import { indexedDBService } from '@/services/storage/indexedDB';
+import { PromptRefinementSuggestion } from '@/types/api';
 
 export interface AIAnalysisResult {
   title: string;
@@ -316,6 +317,119 @@ class AIService {
   ): Promise<Array<{ promptId: string; score: number }>> {
     const queryEmbedding = await this.generateEmbedding(query);
     return indexedDBService.searchSimilar(queryEmbedding, threshold, topK);
+  }
+
+  async refinePrompt(promptContent: string): Promise<PromptRefinementSuggestion[]> {
+    if (!this.initialized) {
+      throw new Error('AI service not initialized');
+    }
+
+    const truncatedContent = promptContent.slice(0, AI_CONFIG.MAX_CONTENT_LENGTH);
+    const prompt = formatPrompt(SYSTEM_PROMPTS.REFINE_PROMPT, {
+      content: truncatedContent,
+    });
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete('refine');
+        reject(new Error('Prompt refinement timed out after 60 seconds'));
+      }, AI_CONFIG.REFINEMENT_TIMEOUT_MS);
+
+      this.pendingRequests.set('refine', {
+        resolve: (response: unknown) => {
+          clearTimeout(timeoutId);
+          this.pendingRequests.delete('refine');
+
+          try {
+            const text = response as string;
+            const cleanText = text.trim();
+            
+            let jsonText = cleanText;
+            if (cleanText.startsWith('```json')) {
+              jsonText = cleanText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+            } else if (cleanText.startsWith('```')) {
+              jsonText = cleanText.replace(/```\n?/g, '');
+            }
+            
+            const parsed = JSON.parse(jsonText);
+            
+            if (!parsed.suggestions || !Array.isArray(parsed.suggestions)) {
+              reject(new Error('Invalid response format: missing suggestions array'));
+              return;
+            }
+
+            const suggestions = parsed.suggestions.filter(
+              (s: unknown): s is PromptRefinementSuggestion => {
+                const suggestion = s as Record<string, unknown>;
+                return (
+                  typeof suggestion.content === 'string' &&
+                  typeof suggestion.explanation === 'string' &&
+                  Array.isArray(suggestion.changes) &&
+                  suggestion.changes.every((c: unknown) => typeof c === 'string')
+                );
+              }
+            );
+
+            if (suggestions.length === 0) {
+              reject(new Error('No valid suggestions in response'));
+              return;
+            }
+
+            resolve(suggestions);
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              reject(new Error('Failed to parse refinement suggestions: Invalid JSON'));
+            } else {
+              reject(error);
+            }
+          }
+        },
+        reject,
+        timeout: timeoutId,
+      });
+
+      this.worker!.postMessage({
+        type: 'generate',
+        payload: { 
+          prompt, 
+          temperature: 0.7, 
+          maxTokens: 2000 
+        },
+      });
+    });
+  }
+
+  async executePrompt(promptContent: string, userInput?: string): Promise<string> {
+    if (!this.initialized) {
+      throw new Error('AI service not initialized');
+    }
+
+    const fullPrompt = userInput 
+      ? `${promptContent}\n\n${userInput}`
+      : promptContent;
+
+    return new Promise((resolve, reject) => {
+      const requestId = `execute_${Date.now()}`;
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Prompt execution timed out'));
+      }, 60000);
+
+      this.pendingRequests.set(requestId, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timeout: timeoutId,
+      });
+
+      this.worker!.postMessage({
+        type: 'generate',
+        payload: { 
+          prompt: fullPrompt, 
+          temperature: 0.7, 
+          maxTokens: 1000 
+        },
+      });
+    });
   }
 
   isInitialized(): boolean {

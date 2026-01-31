@@ -123,3 +123,105 @@ export interface ImportResponse {
   failed: number;
   errors?: string[];
 }
+
+export interface AddRatingRequest {
+  rating: number;
+}
+
+export interface AddRatingResponse {
+  success: boolean;
+  averageRating: number | null;
+  totalRatings: number;
+}
+
+export interface MarkSuccessRequest {
+  success: boolean;
+}
+
+export interface MarkSuccessResponse {
+  success: boolean;
+  successCount: number;
+  failureCount: number;
+  successRate: number | null;
+}
+
+export interface RecordComparisonRequest {
+  winnerId: string;
+  loserIds: string[];
+}
+
+export interface RecordComparisonResponse {
+  success: boolean;
+  winner: {
+    id: string;
+    winCount: number;
+    winRate: number | null;
+  };
+  losers: Array<{
+    id: string;
+    lossCount: number;
+    winRate: number | null;
+  }>;
+}
+
+export interface PromptRefinementSuggestion {
+  content: string;
+  explanation: string;
+  changes: string[];
+}
+
+export interface RefinePromptRequest {
+  content: string;
+}
+
+export interface RefinePromptResponse {
+  suggestions: PromptRefinementSuggestion[];
+}
+
+export interface CreateCollectionRequest {
+  name: string;
+  description: string;
+  promptIds: string[];
+}
+
+export interface CreateCollectionResponse {
+  collection: import('./prompt').PromptCollection;
+}
+
+export interface UpdateCollectionRequest {
+  name?: string;
+  description?: string;
+  promptIds?: string[];
+}
+
+export interface UpdateCollectionResponse {
+  collection: import('./prompt').PromptCollection;
+}
+
+export interface ListCollectionsResponse {
+  collections: import('./prompt').PromptCollection[];
+  total: number;
+}
+
+export interface SharePromptRequest {
+  expiresAt?: string;
+  password?: string;
+}
+
+export interface SharePromptResponse {
+  success: boolean;
+  token: string;
+  url: string;
+  expiresAt?: string;
+}
+
+export interface GetSharedPromptRequest {
+  token: string;
+  password?: string;
+}
+
+export interface GetSharedPromptResponse {
+  prompt: Prompt;
+  sharedAt: string;
+  expiresAt?: string;
+}

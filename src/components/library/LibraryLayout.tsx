@@ -13,8 +13,11 @@ import ImportDialog from './ImportDialog';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import SearchBar from '@/components/search/SearchBar';
+import AdvancedSearchBar, { SearchFilters } from '@/components/search/AdvancedSearchBar';
 import SearchResults from '@/components/search/SearchResults';
-import { Prompt } from '@/types/prompt';
+import TagCloud from '@/components/search/TagCloud';
+import SimilarPrompts from '@/components/search/SimilarPrompts';
+import { Prompt, getAverageRating, getSuccessRate, getWinRate } from '@/types/prompt';
 import { buildFolderTree, FolderNode } from '@/types/folder';
 import { aiService } from '@/services/ai/aiService';
 import { embeddingSyncService } from '@/services/ai/embeddingSync';
@@ -24,8 +27,12 @@ const Composer = dynamic(() => import('@/components/composer/Composer'), {
   ssr: false,
 });
 
+type TabType = 'prompts' | 'collections';
+type SortOption = 'modified' | 'rating' | 'success' | 'winRate' | 'viewCount';
+
 export default function LibraryLayout() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>('prompts');
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +50,14 @@ export default function LibraryLayout() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [showMostUsed, setShowMostUsed] = useState(true);
   const [showRecentlyUsed, setShowRecentlyUsed] = useState(true);
+  const [sortBy, setSortBy] = useState<SortOption>('modified');
+  const [minRating, setMinRating] = useState<number>(0);
+  const [minSuccessRate, setMinSuccessRate] = useState<number>(0);
+  const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
+  const [findingSimilar, setFindingSimilar] = useState(false);
+  const [similarToPromptId, setSimilarToPromptId] = useState<string | null>(null);
+  const [showTagCloud, setShowTagCloud] = useState(false);
+  const [showSimilarPrompts, setShowSimilarPrompts] = useState(false);
 
   useEffect(() => {
     loadPrompts();
@@ -50,11 +65,7 @@ export default function LibraryLayout() {
 
   const syncEmbeddings = useCallback(async () => {
     try {
-      await embeddingSyncService.syncEmbeddings(prompts, (progress) => {
-        console.log(
-          `Syncing embeddings: ${progress.completed}/${progress.total} completed, ${progress.failed} failed`
-        );
-      });
+      await embeddingSyncService.syncEmbeddings(prompts);
     } catch (err) {
       console.error('Failed to sync embeddings:', err);
     }
@@ -115,6 +126,16 @@ export default function LibraryLayout() {
     return Array.from(tagSet).sort();
   }, [prompts]);
 
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    prompts.forEach((prompt) => {
+      prompt.tags.forEach((tag) => {
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      });
+    });
+    return counts;
+  }, [prompts]);
+
   const filteredPrompts = useMemo(() => {
     let filtered = prompts;
 
@@ -132,11 +153,60 @@ export default function LibraryLayout() {
       });
     }
 
-    return filtered.sort(
-      (a, b) =>
-        new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime()
-    );
-  }, [prompts, selectedFolderPath, selectedTags, filterMode]);
+    if (minRating > 0) {
+      filtered = filtered.filter((p) => {
+        const avgRating = getAverageRating(p);
+        return avgRating !== null && avgRating >= minRating;
+      });
+    }
+
+    if (minSuccessRate > 0) {
+      filtered = filtered.filter((p) => {
+        const successRate = getSuccessRate(p);
+        return successRate !== null && successRate >= minSuccessRate / 100;
+      });
+    }
+
+    if (dateRange !== 'all') {
+      const now = new Date();
+      const daysMap = { '7d': 7, '30d': 30, '90d': 90 };
+      const days = daysMap[dateRange];
+      const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+      
+      filtered = filtered.filter((p) => {
+        const modifiedDate = new Date(p.modifiedAt);
+        return modifiedDate >= cutoffDate;
+      });
+    }
+
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'rating': {
+          const ratingA = getAverageRating(a) ?? 0;
+          const ratingB = getAverageRating(b) ?? 0;
+          return ratingB - ratingA;
+        }
+        case 'success': {
+          const successA = getSuccessRate(a) ?? 0;
+          const successB = getSuccessRate(b) ?? 0;
+          return successB - successA;
+        }
+        case 'winRate': {
+          const winRateA = getWinRate(a) ?? 0;
+          const winRateB = getWinRate(b) ?? 0;
+          return winRateB - winRateA;
+        }
+        case 'viewCount': {
+          const viewCountA = a.viewCount ?? 0;
+          const viewCountB = b.viewCount ?? 0;
+          return viewCountB - viewCountA;
+        }
+        case 'modified':
+        default:
+          return new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime();
+      }
+    });
+  }, [prompts, selectedFolderPath, selectedTags, filterMode, minRating, minSuccessRate, dateRange, sortBy]);
 
   const mostUsedPrompts = useMemo(() => {
     return prompts
@@ -161,6 +231,12 @@ export default function LibraryLayout() {
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   };
+
+  const handleFiltersChange = useCallback((filters: SearchFilters) => {
+    setMinRating(filters.minRating);
+    setMinSuccessRate(filters.minSuccessRate);
+    setDateRange(filters.dateRange);
+  }, []);
 
   const handleCreateFolder = async (folderPath: string) => {
     try {
@@ -209,6 +285,7 @@ export default function LibraryLayout() {
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
+    setSimilarToPromptId(null);
 
     if (!query.trim()) {
       setSearchResults([]);
@@ -237,6 +314,39 @@ export default function LibraryLayout() {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleFindSimilar = async (promptId: string) => {
+    const prompt = prompts.find((p) => p.id === promptId);
+    if (!prompt) return;
+
+    setSimilarToPromptId(promptId);
+    setSearchQuery('');
+    setFindingSimilar(true);
+
+    try {
+      if (!aiService.isInitialized()) {
+        throw new Error('AI service not initialized. Please wait for model to load.');
+      }
+
+      const searchText = `${prompt.title} ${prompt.content}`;
+      const results = await aiService.searchSimilar(searchText, 0.5, 10);
+      
+      const promptsWithScores = results
+        .map((result) => {
+          if (result.promptId === promptId) return null;
+          const p = prompts.find((p) => p.id === result.promptId);
+          return p ? { prompt: p, score: result.score } : null;
+        })
+        .filter((item): item is { prompt: Prompt; score: number } => item !== null);
+
+      setSearchResults(promptsWithScores);
+    } catch (err) {
+      console.error('Find similar failed:', err);
+      setError(err instanceof Error ? err.message : 'Find similar failed');
+    } finally {
+      setFindingSimilar(false);
     }
   };
 
@@ -296,12 +406,107 @@ export default function LibraryLayout() {
         </div>
       </div>
 
-      <div className="mb-6 flex justify-center">
-        <SearchBar
-          onSearch={handleSearch}
-          isSearching={isSearching}
-        />
+      <div className="mb-6 border-b border-gray-200">
+        <nav className="flex gap-8">
+          <button
+            onClick={() => setActiveTab('prompts')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'prompts'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Prompts
+          </button>
+          <button
+            onClick={() => setActiveTab('collections')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'collections'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Collections
+          </button>
+        </nav>
       </div>
+
+      {activeTab === 'prompts' && (
+        <>
+          <div className="mb-6 flex justify-center">
+            <AdvancedSearchBar
+              onSearch={handleSearch}
+              onFiltersChange={handleFiltersChange}
+              isSearching={isSearching}
+              showFilters={true}
+            />
+          </div>
+
+          <div className="mb-6 flex flex-wrap gap-4 items-center bg-white p-4 rounded-lg border border-gray-200">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Sort by:</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="modified">Last Modified</option>
+                <option value="rating">Rating</option>
+                <option value="success">Success Rate</option>
+                <option value="winRate">Win Rate</option>
+                <option value="viewCount">View Count</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => setShowTagCloud(!showTagCloud)}
+              className={`px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
+                showTagCloud
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {showTagCloud ? 'Hide' : 'Show'} Tag Cloud
+            </button>
+
+            <button
+              onClick={() => setShowSimilarPrompts(!showSimilarPrompts)}
+              className={`px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
+                showSimilarPrompts
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+              disabled={!selectedPrompt}
+            >
+              {showSimilarPrompts ? 'Hide' : 'Show'} Similar Prompts
+            </button>
+          </div>
+
+          {showTagCloud && (
+            <div className="mb-6">
+              <TagCloud
+                tags={availableTags}
+                tagCounts={tagCounts}
+                selectedTags={selectedTags}
+                onTagClick={handleTagToggle}
+                maxTags={50}
+              />
+            </div>
+          )}
+
+          {showSimilarPrompts && selectedPrompt && (
+            <div className="mb-6">
+              <SimilarPrompts
+                sourcePrompt={selectedPrompt}
+                allPrompts={prompts}
+                onPromptClick={setSelectedPrompt}
+                maxResults={5}
+                minSimilarityScore={0.3}
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {error && (
         <ErrorMessage
@@ -311,27 +516,42 @@ export default function LibraryLayout() {
         />
       )}
 
-      {searchQuery ? (
+      {activeTab === 'collections' && (
+        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+          <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">Collections Coming Soon</h3>
+          <p className="text-gray-600">
+            Create and manage prompt collections to organize your workflow.
+          </p>
+        </div>
+      )}
+
+      {activeTab === 'prompts' && (searchQuery || similarToPromptId) ? (
         <div className="mt-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Search Results</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {similarToPromptId ? 'Similar Prompts' : 'Search Results'}
+            </h2>
             <button
               onClick={() => {
                 setSearchQuery('');
                 setSearchResults([]);
+                setSimilarToPromptId(null);
               }}
               className="text-sm text-blue-600 hover:text-blue-700"
             >
-              Clear Search
+              Clear {similarToPromptId ? 'Similar' : 'Search'}
             </button>
           </div>
           <SearchResults
             results={searchResults}
             onPromptClick={setSelectedPrompt}
-            isSearching={isSearching}
+            isSearching={isSearching || findingSimilar}
           />
         </div>
-      ) : (
+      ) : activeTab === 'prompts' ? (
         <>
           {(mostUsedPrompts.length > 0 || recentlyUsedPrompts.length > 0) && (
             <div className="mb-6 space-y-6">
@@ -422,7 +642,7 @@ export default function LibraryLayout() {
           </div>
         </div>
         </>
-      )}
+      ) : null}
 
       <PromptDetailModal
         prompt={selectedPrompt}
@@ -433,6 +653,7 @@ export default function LibraryLayout() {
           );
           setSelectedPrompt(updatedPrompt);
         }}
+        onFindSimilar={handleFindSimilar}
       />
 
       <DeleteConfirmDialog
